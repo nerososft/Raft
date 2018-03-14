@@ -26,14 +26,11 @@ public class RaftServer implements IRaftServer {
     final Selector selector;
     final ServerSocketChannel serverSocketChannel;
 
-    public static Map<UUID, SocketChannel> clientsMap = new HashMap<UUID, SocketChannel>();
-    public static Map<UUID, Long> clientsbeatMap = new HashMap<UUID, Long>();
-    public static Map<UUID,Node> nodeList = new HashMap<UUID,Node>();
-    Timer timer;
+    public static Map<UUID, SocketChannel> clientsMap = Collections.synchronizedMap(new HashMap<UUID, SocketChannel>());
+    public static Map<UUID, Long> clientsbeatMap = Collections.synchronizedMap(new HashMap<UUID, Long>());
+    public static Map<UUID,Node> nodeList = Collections.synchronizedMap(new HashMap<UUID,Node>());
 
     Role role;
-    public static Long timeOut = 10*1000L;
-    public static int tickInterval = 5;
 
     RaftServer(int port,Role role) throws IOException{
         this.role = role;
@@ -45,31 +42,12 @@ public class RaftServer implements IRaftServer {
 
         SelectionKey selectionKey = this.serverSocketChannel.register(selector,SelectionKey.OP_ACCEPT);
         selectionKey.attach(new Acceptor(WhoseAcceptor.SERVER,serverSocketChannel,selector));
-
-        timer = new Timer();
-    }
-
-    class BeatCheckTask extends TimerTask{
-
-        public void run() {
-            if(!clientsbeatMap.isEmpty()) {
-                for (Map.Entry<UUID,Long> entry: clientsbeatMap.entrySet()) {
-                    if (System.currentTimeMillis() - entry.getValue()>2*tickInterval*1000) {
-                        System.out.println("客户端 "+entry.getKey()+"异常，掉线！");
-                        nodeList.remove(entry.getKey());
-                        clientsbeatMap.remove(entry.getKey());
-                        clientsMap.remove(entry.getKey());
-                    }
-                }
-            }
-        }
     }
 
     public void run() {
         System.out.println("Server listening to port: "+serverSocketChannel.socket().getLocalPort());
 
         try{
-            timer.schedule(new BeatCheckTask(),5*1000,5*1000);
             while(!Thread.interrupted()){
                 int readySelectionKeyCount = selector.select();
                 if (readySelectionKeyCount == 0) {
@@ -102,4 +80,9 @@ public class RaftServer implements IRaftServer {
     public void setNodeList(List<Node> nodeList) {
 
     }
+
+    public synchronized static Set<Map.Entry<UUID, SocketChannel>> getClientMapEntry(){
+        return clientsMap.entrySet();
+    }
 }
+

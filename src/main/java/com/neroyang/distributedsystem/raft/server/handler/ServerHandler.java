@@ -16,6 +16,10 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
+
+import static com.neroyang.distributedsystem.raft.client.Client.*;
+import static com.neroyang.distributedsystem.raft.server.RaftServer.*;
 
 /**
  * Author neroyang
@@ -32,6 +36,7 @@ public class ServerHandler implements Runnable {
 
     Request request;
     int state = READING;
+    Timer timer;
 
     public ServerHandler(SocketChannel socketChannel, Selector selector) throws IOException {
         this.socketChannel = socketChannel;
@@ -41,8 +46,26 @@ public class ServerHandler implements Runnable {
         selectionKey.attach(this);
         selectionKey.interestOps(SelectionKey.OP_READ);
         selector.wakeup();
+        timer = new Timer();
+        timer.schedule(new BeatCheckTask(), 5 * 1000, tickCheckInterval * 1000);
     }
 
+    class BeatCheckTask extends TimerTask {
+        public void run() {
+            if (!clientsMap.isEmpty() && !clientsbeatMap.isEmpty()) {
+                for (Map.Entry<UUID, SocketChannel> entry : RaftServer.getClientMapEntry()) {
+                    if (socketChannel.equals(entry.getValue())) {
+                        if (System.currentTimeMillis() - clientsbeatMap.get(entry.getKey()) > timeOutTime * 1000) {
+                            System.out.println("客户端 " + entry.getKey() + "异常，掉线！");
+                            nodeList.remove(entry.getKey());
+                            clientsbeatMap.remove(entry.getKey());
+                            clientsMap.remove(entry.getKey());
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     public void run() {
         try {
@@ -53,14 +76,6 @@ public class ServerHandler implements Runnable {
             }
         } catch (IOException e) {
             System.out.println("客户端异常或离线。");
-//            synchronized(RaftServer.clientsMap) {
-//                for (Map.Entry entry : RaftServer.clientsMap.entrySet()) {
-//                    if (socketChannel.equals(entry.getValue())) {
-//                        RaftServer.nodeList.remove(entry.getKey());
-//                        RaftServer.clientsMap.remove(entry.getKey());
-//                    }
-//                }
-//            }
         }
     }
 
@@ -92,12 +107,12 @@ public class ServerHandler implements Runnable {
                 Request<HeartBeat> heartBeatRequest = ProtoStuffUtils.deserializer(receivedBytes, Request.class);
 
                 //记录节点延迟
-                Node node = RaftServer.nodeList.get(request.getRequestID());
-                node.setDelay(System.currentTimeMillis()-heartBeatRequest.getData().getTimestamp());
-                RaftServer.nodeList.put(request.getRequestID(),node);
+                Node node = nodeList.get(request.getRequestID());
+                node.setDelay(System.currentTimeMillis() - heartBeatRequest.getData().getTimestamp());
+                nodeList.put(request.getRequestID(), node);
 
                 //更新上一次心跳时间
-                RaftServer.clientsbeatMap.put(heartBeatRequest.getRequestID(),System.currentTimeMillis()); //更新tick时间
+                clientsbeatMap.put(heartBeatRequest.getRequestID(), System.currentTimeMillis()); //更新tick时间
 
                 System.out.println(heartBeatRequest.toString());
                 break;
@@ -114,21 +129,22 @@ public class ServerHandler implements Runnable {
             case JOIN_REQ://服务端收到请求
                 //加入Leader节点列表
                 Request<Node> nodeRequest = ProtoStuffUtils.deserializer(receivedBytes, Request.class);
-                RaftServer.nodeList.put(request.getRequestID(),nodeRequest.getData());
+                nodeList.put(request.getRequestID(), nodeRequest.getData());
+                clientsMap.put(nodeRequest.getRequestID(), socketChannel);
+                clientsbeatMap.put(nodeRequest.getRequestID(), System.currentTimeMillis());
 
-                RaftServer.clientsMap.put(nodeRequest.getRequestID(), socketChannel);
-                System.out.println("状态：当前Follower数：" + RaftServer.clientsMap.size());
+                System.out.println("状态：当前Follower数：" + clientsMap.size());
                 //通知其节点更新节点列表
-                if (!RaftServer.clientsMap.isEmpty()) {
-                    Set<UUID> keySet = RaftServer.clientsMap.keySet();
+                if (!clientsMap.isEmpty()) {
+                    Set<UUID> keySet = clientsMap.keySet();
                     Iterator<UUID> keys = keySet.iterator();
                     while (keys.hasNext()) {
                         UUID uuid = keys.next();
-                        SocketChannel tempChannel = RaftServer.clientsMap.get(uuid);
-                        Request<Map<UUID,Node>> nodeAllResponse = new Request<Map<UUID,Node>>(
+                        SocketChannel tempChannel = clientsMap.get(uuid);
+                        Request<Map<UUID, Node>> nodeAllResponse = new Request<Map<UUID, Node>>(
                                 uuid,
                                 ELECTION.JOIN_NOTIFICATION,
-                                RaftServer.nodeList);
+                                nodeList);
                         byte[] listbytes = ProtoStuffUtils.serializer(nodeAllResponse);
                         System.out.println("发送：通知节点更新列表！");
                         tempChannel.write(ByteBuffer.wrap(listbytes));

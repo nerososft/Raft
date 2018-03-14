@@ -76,7 +76,7 @@ public class ClientHandler implements Runnable {
 
         public void run() {
             System.out.println("检查Leader超时.");
-            if(System.currentTimeMillis()-lastHeartBeatTime>Client.tickInterval*2*1000){
+            if(System.currentTimeMillis()-lastHeartBeatTime>Client.timeOutTime*1000){
                 System.out.println("Leader无响应.选举开始!");
                 state = SENDING;
                 selectionKey.interestOps(SelectionKey.OP_WRITE);
@@ -147,7 +147,7 @@ public class ClientHandler implements Runnable {
 
                    //timeout检测
                    tickCheckTimer = new Timer();
-                   tickCheckTimer.schedule(new TickCheckTask(), 0,5*1000);
+                   tickCheckTimer.schedule(new TickCheckTask(), 0,Client.tickCheckInterval*1000);
                }
                notifyTimes.incrementAndGet();
                 selectionKey.interestOps(SelectionKey.OP_READ);
