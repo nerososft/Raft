@@ -27,7 +27,7 @@ public class RaftServer implements IRaftServer {
     final ServerSocketChannel serverSocketChannel;
 
     public static Map<UUID, SocketChannel> clientsMap = Collections.synchronizedMap(new HashMap<UUID, SocketChannel>());
-    public static Map<UUID, Long> clientsbeatMap = Collections.synchronizedMap(new HashMap<UUID, Long>());
+    public static Map<UUID, Long> clientsBeatMap = Collections.synchronizedMap(new HashMap<UUID, Long>());
     public static Map<UUID,Node> nodeList = Collections.synchronizedMap(new HashMap<UUID,Node>());
 
     Role role;

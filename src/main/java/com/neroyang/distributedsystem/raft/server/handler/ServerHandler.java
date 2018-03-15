@@ -7,6 +7,7 @@ import com.neroyang.distributedsystem.raft.common.entity.Node;
 import com.neroyang.distributedsystem.raft.common.entity.Request;
 import com.neroyang.distributedsystem.raft.constant.ELECTION;
 import com.neroyang.distributedsystem.raft.server.RaftServer;
+import com.neroyang.distributedsystem.raft.server.task.BeatCheckTask;
 import com.neroyang.distributedsystem.raft.utils.ProtoStuffUtils;
 
 import java.io.IOException;
@@ -19,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.neroyang.distributedsystem.raft.client.Client.*;
+import static com.neroyang.distributedsystem.raft.common.config.RaftConfig.tickCheckInterval;
+import static com.neroyang.distributedsystem.raft.common.config.RaftConfig.timeOutTime;
 import static com.neroyang.distributedsystem.raft.server.RaftServer.*;
 
 /**
@@ -47,24 +50,7 @@ public class ServerHandler implements Runnable {
         selectionKey.interestOps(SelectionKey.OP_READ);
         selector.wakeup();
         timer = new Timer();
-        timer.schedule(new BeatCheckTask(), 5 * 1000, tickCheckInterval * 1000);
-    }
-
-    class BeatCheckTask extends TimerTask {
-        public void run() {
-            if (!clientsMap.isEmpty() && !clientsbeatMap.isEmpty()) {
-                for (Map.Entry<UUID, SocketChannel> entry : RaftServer.getClientMapEntry()) {
-                    if (socketChannel.equals(entry.getValue())) {
-                        if (System.currentTimeMillis() - clientsbeatMap.get(entry.getKey()) > timeOutTime * 1000) {
-                            System.out.println("客户端 " + entry.getKey() + "异常，掉线！");
-                            nodeList.remove(entry.getKey());
-                            clientsbeatMap.remove(entry.getKey());
-                            clientsMap.remove(entry.getKey());
-                        }
-                    }
-                }
-            }
-        }
+        timer.schedule(new BeatCheckTask(socketChannel), tickCheckInterval * 1000, tickCheckInterval * 1000);
     }
 
     public void run() {
@@ -112,7 +98,7 @@ public class ServerHandler implements Runnable {
                 nodeList.put(request.getRequestID(), node);
 
                 //更新上一次心跳时间
-                clientsbeatMap.put(heartBeatRequest.getRequestID(), System.currentTimeMillis()); //更新tick时间
+                clientsBeatMap.put(heartBeatRequest.getRequestID(), System.currentTimeMillis()); //更新tick时间
 
                 System.out.println(heartBeatRequest.toString());
                 break;
@@ -131,7 +117,7 @@ public class ServerHandler implements Runnable {
                 Request<Node> nodeRequest = ProtoStuffUtils.deserializer(receivedBytes, Request.class);
                 nodeList.put(request.getRequestID(), nodeRequest.getData());
                 clientsMap.put(nodeRequest.getRequestID(), socketChannel);
-                clientsbeatMap.put(nodeRequest.getRequestID(), System.currentTimeMillis());
+                clientsBeatMap.put(nodeRequest.getRequestID(), System.currentTimeMillis());
 
                 System.out.println("状态：当前Follower数：" + clientsMap.size());
                 //通知其节点更新节点列表

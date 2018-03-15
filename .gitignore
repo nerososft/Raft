@@ -1,0 +1,7 @@
+# Created by .ignore support plugin (hsz.mobi)
+.gitignore
+src/test/
+target/generated-sources/
+src/main/java/com/neroyang/distributedsystem/raft/common/exceptions/
+src/main/java/com/neroyang/distributedsystem/raft/storage/
+src/main/resources/

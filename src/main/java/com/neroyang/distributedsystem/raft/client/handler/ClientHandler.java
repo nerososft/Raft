@@ -1,6 +1,7 @@
 package com.neroyang.distributedsystem.raft.client.handler;
 
 import com.neroyang.distributedsystem.raft.client.Client;
+import com.neroyang.distributedsystem.raft.client.task.TickTask;
 import com.neroyang.distributedsystem.raft.common.entity.HeartBeat;
 import com.neroyang.distributedsystem.raft.common.entity.Node;
 import com.neroyang.distributedsystem.raft.common.entity.Request;
@@ -16,6 +17,9 @@ import java.nio.channels.SocketChannel;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.neroyang.distributedsystem.raft.common.config.RaftConfig.tickCheckInterval;
+import static com.neroyang.distributedsystem.raft.common.config.RaftConfig.tickInterval;
+import static com.neroyang.distributedsystem.raft.common.config.RaftConfig.timeOutTime;
 import static com.neroyang.distributedsystem.raft.constant.ELECTION.HEARTBEAT_RSP;
 import static com.neroyang.distributedsystem.raft.constant.ELECTION.JOIN_NOTIFICATION;
 
@@ -56,38 +60,11 @@ public class ClientHandler implements Runnable {
         notifyTimes.set(0);
     }
 
-    class TickTask extends TimerTask{
-
-        public void run() {
-            Request<HeartBeat> heartBeatRequest = new Request<HeartBeat>(
-                    request.getRequestID(),
-                    ELECTION.HEARTBEAT_REQ,
-                    new HeartBeat(System.currentTimeMillis())
-            );
-            ByteBuffer byteBuffer = ByteBuffer.wrap(ProtoStuffUtils.serializer(heartBeatRequest));
-            try {
-                socketChannel.write(byteBuffer);
-            } catch (IOException e) {
-                System.out.println("服务端掉线！"+e.getMessage());
-            }
-        }
-    }
-    class TickCheckTask extends TimerTask{
-
-        public void run() {
-            System.out.println("检查Leader超时.");
-            if(System.currentTimeMillis()-lastHeartBeatTime>Client.timeOutTime*1000){
-                System.out.println("Leader无响应.选举开始!");
-                state = SENDING;
-                selectionKey.interestOps(SelectionKey.OP_WRITE);
-                this.cancel();
-            }
-        }
-    }
 
     public void run() {
         try{
             if(state == READING){
+
                 read();
             }else if(state==SENDING){
                 write();
@@ -135,6 +112,18 @@ public class ClientHandler implements Runnable {
 
     }
 
+    class TickCheckTask extends TimerTask {
+        public void run() {
+            System.out.println("检查Leader超时.");
+            if(System.currentTimeMillis()-lastHeartBeatTime>timeOutTime*1000){
+                System.out.println("Leader无响应.选举开始!");
+                state = SENDING;
+                selectionKey.interestOps(SelectionKey.OP_WRITE);
+                this.cancel();
+            }
+        }
+    }
+
     //client->server
     void write() throws IOException {
         switch (request.getRequestCode()) {
@@ -143,11 +132,11 @@ public class ClientHandler implements Runnable {
 
                     //心跳任务
                    tickTimer = new Timer();
-                   tickTimer.schedule(new TickTask(), Client.tickInterval * 1000);
+                   tickTimer.schedule(new TickTask(request,socketChannel), tickInterval * 1000);
 
                    //timeout检测
                    tickCheckTimer = new Timer();
-                   tickCheckTimer.schedule(new TickCheckTask(), 0,Client.tickCheckInterval*1000);
+                   tickCheckTimer.schedule(new TickCheckTask(), 0,tickCheckInterval*1000);
                }
                notifyTimes.incrementAndGet();
                 selectionKey.interestOps(SelectionKey.OP_READ);
@@ -158,7 +147,7 @@ public class ClientHandler implements Runnable {
                 tickTimer.cancel();
                 tickTimer = null;
                 tickTimer = new Timer();
-                tickTimer.schedule(new TickTask(),Client.tickInterval*1000);
+                tickTimer.schedule(new TickTask(request,socketChannel),tickInterval*1000);
 
                 selectionKey.interestOps(SelectionKey.OP_READ);
                 state = READING;

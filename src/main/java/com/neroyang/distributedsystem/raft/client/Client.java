@@ -28,10 +28,6 @@ public class Client {
     String hostIP;
     int hostPort;
 
-    public static final int tickInterval = 5;
-    public static final int tickCheckInterval = 5;
-    public static final int timeOutTime =10;
-
     public Client(String hostIP, int hostPort) throws IOException {
         this.hostIP = hostIP;
         this.hostPort = hostPort;
